@@ -41,9 +41,12 @@ export default function Game({ user, roomId }: GameProps) {
   const [lang] = useState<Language>((localStorage.getItem("lang") as Language) || "en");
   const t = translations[lang];
   const socketRef = useRef<Socket | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const [isMuted, setIsMuted] = useState(localStorage.getItem("gameMuted") === "true");
   
   const [joystickData, setJoystickData] = useState<{ x: number, y: number } | null>(null);
   const joystickDataRef = useRef<{ x: number, y: number } | null>(null);
+  const aimJoystickDataRef = useRef<{ x: number, y: number } | null>(null);
   const shootRef = useRef<() => void>(() => {});
   
   const playersRef = useRef<Record<string, any>>({});
@@ -62,6 +65,17 @@ export default function Game({ user, roomId }: GameProps) {
   const smokeParticlesRef = useRef<any[]>([]);
 
   useEffect(() => {
+    if (audioRef.current) {
+      if (isMuted) {
+        audioRef.current.pause();
+      } else if (!showStartModal) {
+        audioRef.current.play().catch(() => {});
+      }
+      localStorage.setItem("gameMuted", isMuted.toString());
+    }
+  }, [isMuted, showStartModal]);
+
+  useEffect(() => {
     const fetchUserData = async () => {
       const token = localStorage.getItem("token");
       const res = await fetch("/api/user/data", {
@@ -78,14 +92,34 @@ export default function Game({ user, roomId }: GameProps) {
 
   useEffect(() => {
     const checkMobile = () => {
-      setIsMobile('ontouchstart' in window || navigator.maxTouchPoints > 0);
+      setIsMobile('ontouchstart' in window || navigator.maxTouchPoints > 0 || window.innerWidth < 1024);
     };
     checkMobile();
+    window.addEventListener('resize', checkMobile);
 
     const canvas = canvasRef.current;
-    if (!canvas) return;
+    if (!canvas || !containerRef.current) return;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
+
+    const resizeObserver = new ResizeObserver(() => {
+      if (containerRef.current && canvas) {
+        canvas.width = containerRef.current.clientWidth;
+        canvas.height = containerRef.current.clientHeight;
+      }
+    });
+    resizeObserver.observe(containerRef.current);
+
+    // Background Music
+    const musicUrl = "https://cdn.pixabay.com/audio/2022/03/10/audio_c8c8a73056.mp3"; // Cyberpunk/Action style
+    const audio = new Audio(musicUrl);
+    audio.loop = true;
+    audio.volume = 0.3;
+    audioRef.current = audio;
+    
+    if (!isMuted && !showStartModalRef.current) {
+      audio.play().catch(e => console.log("Audio play failed:", e));
+    }
 
     const generateObstacles = (mapName: string) => {
       const theme = MAP_THEMES[mapName] || MAP_THEMES["Warehouse"];
@@ -181,6 +215,10 @@ export default function Game({ user, roomId }: GameProps) {
       socket.emit("joinRoom", { roomId, username: freshUser.username, role: freshUser.role, weapon, loadout, skin });
       setShowStartModal(false);
       showStartModalRef.current = false;
+      
+      if (audioRef.current && !isMuted) {
+        audioRef.current.play().catch(e => console.log("Audio play failed:", e));
+      }
     };
 
     socket.on("mapUpdate", (mapName) => {
@@ -329,7 +367,14 @@ export default function Game({ user, roomId }: GameProps) {
       const centerX = window.innerWidth / 2;
       const centerY = window.innerHeight / 2;
       
-      if (joystickDataRef.current && (Math.abs(joystickDataRef.current.x) > 0.1 || Math.abs(joystickDataRef.current.y) > 0.1)) {
+      if (aimJoystickDataRef.current && (Math.abs(aimJoystickDataRef.current.x) > 0.1 || Math.abs(aimJoystickDataRef.current.y) > 0.1)) {
+        playerRotation.current = Math.atan2(-aimJoystickDataRef.current.y, aimJoystickDataRef.current.x);
+        // Auto-shoot if aim joystick is pushed far enough
+        const mag = Math.sqrt(aimJoystickDataRef.current.x**2 + aimJoystickDataRef.current.y**2);
+        if (mag > 0.5) {
+          shootRef.current();
+        }
+      } else if (joystickDataRef.current && (Math.abs(joystickDataRef.current.x) > 0.1 || Math.abs(joystickDataRef.current.y) > 0.1)) {
         playerRotation.current = Math.atan2(-joystickDataRef.current.y, joystickDataRef.current.x);
       } else if (!isMobile) {
         playerRotation.current = Math.atan2(mousePos.current.y - centerY, mousePos.current.x - centerX);
@@ -611,6 +656,10 @@ export default function Game({ user, roomId }: GameProps) {
     const animId = requestAnimationFrame(animate);
 
     return () => {
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current = null;
+      }
       cancelAnimationFrame(animId);
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("keyup", onKeyUp);
@@ -651,16 +700,18 @@ export default function Game({ user, roomId }: GameProps) {
           switchEffectRef.current = 10;
         }}
         lastShootTime={lastShootTimeState}
+        isMuted={isMuted}
+        onToggleMute={() => setIsMuted(!isMuted)}
       />
 
       {isMobile && !showStartModal && (
         <>
-          <div className="absolute bottom-12 left-12 pointer-events-auto">
+          <div className="absolute bottom-12 left-12 pointer-events-auto opacity-60 hover:opacity-100 transition-opacity">
             <Joystick 
               size={100} 
               sticky={false} 
               baseColor="rgba(0,0,0,0.5)" 
-              stickColor="rgba(16,185,129,0.5)" 
+              stickColor="rgba(255,255,255,0.3)" 
               move={(e: any) => {
                 joystickDataRef.current = { x: e.x || 0, y: e.y || 0 };
               }} 
@@ -669,14 +720,19 @@ export default function Game({ user, roomId }: GameProps) {
               }} 
             />
           </div>
-          <div className="absolute bottom-12 right-12 pointer-events-auto flex flex-col gap-4 items-end">
-            <button 
-              onMouseDown={() => shootRef.current()} 
-              onTouchStart={(e) => { e.preventDefault(); shootRef.current(); }}
-              className="w-24 h-24 bg-emerald-600/40 border-4 border-emerald-500 rounded-full flex items-center justify-center active:scale-95 transition-all shadow-2xl shadow-emerald-500/20"
-            >
-              <Zap className="w-10 h-10 text-white fill-white" />
-            </button>
+          <div className="absolute bottom-12 right-12 pointer-events-auto opacity-60 hover:opacity-100 transition-opacity">
+            <Joystick 
+              size={120} 
+              sticky={false} 
+              baseColor="rgba(0,0,0,0.5)" 
+              stickColor="rgba(16,185,129,0.5)" 
+              move={(e: any) => {
+                aimJoystickDataRef.current = { x: e.x || 0, y: e.y || 0 };
+              }} 
+              stop={() => {
+                aimJoystickDataRef.current = null;
+              }} 
+            />
           </div>
         </>
       )}

@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { motion } from "motion/react";
+import { Eye, EyeOff } from "lucide-react";
 
 interface AuthProps {
   onLogin: (user: any, token: string) => void;
@@ -9,6 +10,7 @@ export default function Auth({ onLogin }: AuthProps) {
   const [isLogin, setIsLogin] = useState(true);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -21,7 +23,14 @@ export default function Auth({ onLogin }: AuthProps) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ username, password }),
       });
-      const data = await res.json();
+      
+      let data;
+      try {
+        data = await res.json();
+      } catch (e) {
+        throw new Error("Server response was not valid JSON");
+      }
+
       if (res.ok) {
         if (isLogin) {
           onLogin(data.user, data.token);
@@ -30,10 +39,11 @@ export default function Auth({ onLogin }: AuthProps) {
           alert("Account created! Please login.");
         }
       } else {
-        setError(data.error);
+        setError(data.error || "An unknown error occurred");
       }
-    } catch (err) {
-      setError("Something went wrong");
+    } catch (err: any) {
+      console.error("Auth error:", err);
+      setError(err.message === "Failed to fetch" ? "Cannot connect to server. Is it running?" : "Something went wrong");
     }
   };
 
@@ -60,16 +70,25 @@ export default function Auth({ onLogin }: AuthProps) {
               required
             />
           </div>
-          <div>
+          <div className="relative">
             <label className="block text-xs font-semibold uppercase tracking-widest text-zinc-500 mb-1">Password</label>
-            <input 
-              type="password" 
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="w-full bg-zinc-800 border border-white/5 rounded-lg px-4 py-3 focus:outline-none focus:border-emerald-500 transition-colors"
-              placeholder="Enter password"
-              required
-            />
+            <div className="relative">
+              <input 
+                type={showPassword ? "text" : "password"} 
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="w-full bg-zinc-800 border border-white/5 rounded-lg px-4 py-3 pr-12 focus:outline-none focus:border-emerald-500 transition-colors"
+                placeholder="Enter password"
+                required
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 p-1.5 text-zinc-500 hover:text-emerald-500 transition-colors"
+              >
+                {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+              </button>
+            </div>
           </div>
           
           {error && <p className="text-red-500 text-sm">{error}</p>}

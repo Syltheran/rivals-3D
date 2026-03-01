@@ -99,13 +99,15 @@ async function startServer() {
 
   app.post("/api/login", async (req, res) => {
     const { username, password } = req.body;
-    const user = db.prepare("SELECT * FROM users WHERE username = ?").get(username) as any;
+    if (!username || !password) return res.status(400).json({ error: "Missing fields" });
+    
+    const user = db.prepare("SELECT * FROM users WHERE LOWER(username) = LOWER(?)").get(username) as any;
 
     if (user && await bcrypt.compare(password, user.password)) {
       const token = jwt.sign({ id: user.id, username: user.username, role: user.role }, JWT_SECRET);
       res.json({ token, user: { id: user.id, username: user.username, role: user.role } });
     } else {
-      res.status(401).json({ error: "Invalid credentials" });
+      res.status(401).json({ error: "Invalid username or password" });
     }
   });
 
@@ -184,7 +186,16 @@ async function startServer() {
     try {
       const decoded = jwt.verify(authHeader.split(" ")[1], JWT_SECRET) as any;
       const user = db.prepare("SELECT id, username, role, currency, keys, loadout, skin, weapon_skin FROM users WHERE id = ?").get(decoded.id) as any;
-      const items = db.prepare("SELECT item_id, type FROM owned_items WHERE user_id = ?").all(decoded.id);
+      let items = db.prepare("SELECT item_id, type FROM owned_items WHERE user_id = ?").all(decoded.id);
+      
+      // If owner, they own everything
+      if (user.role === 'owner') {
+        const allWeapons = WEAPONS.map(w => ({ item_id: w.id, type: 'weapon' }));
+        const allSkins = SKINS.map(s => ({ item_id: s.id, type: 'skin' }));
+        const allWeaponSkins = WEAPON_SKINS.map(s => ({ item_id: s.id, type: 'weapon_skin' }));
+        items = [...allWeapons, ...allSkins, ...allWeaponSkins];
+      }
+      
       res.json({ user, items, availableWeapons: WEAPONS, availableSkins: SKINS, availableWeaponSkins: WEAPON_SKINS });
     } catch (e) {
       res.status(401).json({ error: "Invalid token" });

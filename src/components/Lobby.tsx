@@ -203,13 +203,13 @@ export default function Lobby({ user, onLogout, onJoinRoom }: LobbyProps) {
   };
 
   const handleEquipWeapon = (weaponId: string) => {
-    const currentLoadout = userData.user.loadout.split(",");
+    const currentLoadout = (userData?.user?.loadout || "pistol,revolver,none,none,none,none").split(",");
     currentLoadout[selectedSlot] = weaponId;
-    handleUpdateLoadout(currentLoadout, userData.user.skin);
+    handleUpdateLoadout(currentLoadout, userData?.user?.skin || "default");
   };
 
   const handleEquipSkin = (skinId: string) => {
-    const currentLoadout = userData.user.loadout.split(",");
+    const currentLoadout = (userData?.user?.loadout || "pistol,revolver,none,none,none,none").split(",");
     handleUpdateLoadout(currentLoadout, skinId);
   };
 
@@ -269,7 +269,7 @@ export default function Lobby({ user, onLogout, onJoinRoom }: LobbyProps) {
           </div>
         </div>
         
-        <div className="flex gap-2 bg-zinc-900/50 p-1.5 rounded-2xl border border-white/5 backdrop-blur-xl">
+        <div className="flex gap-2 bg-zinc-900/50 p-1.5 rounded-2xl border border-white/5 backdrop-blur-xl overflow-x-auto max-w-full no-scrollbar">
           <TabButton active={activeTab === 'rounds'} onClick={() => setActiveTab('rounds')} icon={<Play className="w-4 h-4" />} label={t.rounds} />
           <TabButton active={activeTab === 'skins'} onClick={() => setActiveTab('skins')} icon={<Gift className="w-4 h-4" />} label={t.mySkins} />
           <TabButton active={activeTab === 'shop'} onClick={() => setActiveTab('shop')} icon={<ShoppingBag className="w-4 h-4" />} label={t.shop} />
